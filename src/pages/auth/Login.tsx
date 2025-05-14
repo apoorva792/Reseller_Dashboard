@@ -1,145 +1,170 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-import { Button } from "@/components/ui/button";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from '@/components/ui/checkbox';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
-import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
+import { toast } from 'sonner';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 
-const loginSchema = z.object({
-  email: z.string().email("Please enter a valid email"),
-  password: z.string().min(1, "Password is required"),
-  rememberMe: z.boolean().optional(),
-});
-
-type LoginFormValues = z.infer<typeof loginSchema>;
-
-const Login = () => {
-  const { login } = useAuth();
+function Login() {
   const navigate = useNavigate();
+  const { login } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
   
-  const form = useForm<LoginFormValues>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: {
-      email: "",
-      password: "",
-      rememberMe: false,
-    },
+  // Form state
+  const [formData, setFormData] = useState({
+    email: '',
+    password: ''
   });
-
-  async function onSubmit(data: LoginFormValues) {
-    try {
-      await login(data.email, data.password);
-      
-      // After successful login, check if the user has completed onboarding
-      const onboardingState = localStorage.getItem('onboarding_state');
-      
-      if (onboardingState) {
-        const state = JSON.parse(onboardingState);
-        if (!state.onboardingCompleted) {
-          // If onboarding isn't completed, redirect to onboarding flow
-          navigate('/onboarding/interests');
-          return;
-        }
-      } else {
-        // No onboarding state found, user is new
-        navigate('/onboarding/interests');
-        return;
-      }
-      
-      // If onboarding is completed or skipped, toast success and let normal redirect happen
-      toast.success("Login successful!");
-    } catch (error: any) {
-      console.error(error);
-      toast.error(error?.response?.data?.detail || "Login failed");
+  
+  // Form error state
+  const [errors, setErrors] = useState({
+    email: '',
+    password: '',
+    form: ''
+  });
+  
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+    
+    // Clear error when field is changed
+    if (errors[name]) {
+      setErrors(prev => ({
+        ...prev,
+        [name]: ''
+      }));
     }
-  }
-
+    
+    // Clear form error when any field is changed
+    if (errors.form) {
+      setErrors(prev => ({
+        ...prev,
+        form: ''
+      }));
+    }
+  };
+  
+  const validateForm = () => {
+    let valid = true;
+    const newErrors = { ...errors };
+    
+    // Email validation
+    if (!formData.email) {
+      newErrors.email = 'Email is required';
+      valid = false;
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      newErrors.email = 'Email is invalid';
+      valid = false;
+    }
+    
+    // Password validation
+    if (!formData.password) {
+      newErrors.password = 'Password is required';
+      valid = false;
+    }
+    
+    setErrors(newErrors);
+    return valid;
+  };
+  
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!validateForm()) {
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    try {
+      console.log("Logging in with:", formData.email);
+      await login(formData.email, formData.password);
+      navigate('/');
+    } catch (error) {
+      console.error('Login failed:', error);
+      
+      // Set form error
+      setErrors(prev => ({
+        ...prev,
+        form: 'Login failed. Please check your credentials and try again.'
+      }));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
   return (
-    <Card className="w-full card-neumorph animate-fade-in">
+    <Card className="w-full max-w-md mx-auto">
       <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-bold">Welcome back</CardTitle>
-        <CardDescription>Login to your account</CardDescription>
+        <CardTitle className="text-2xl font-bold">Sign In</CardTitle>
+        <CardDescription>Enter your credentials to access your account</CardDescription>
       </CardHeader>
       <CardContent>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {errors.form && (
+            <div className="p-3 mb-3 bg-red-100 border border-red-300 text-red-700 rounded-md">
+              {errors.form}
+            </div>
+          )}
+          
+          <div className="space-y-2">
+            <label htmlFor="email" className="text-sm font-medium">
+              Email
+            </label>
+            <Input
+              id="email"
               name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Email</FormLabel>
-                  <FormControl>
-                    <Input type="email" placeholder="john@example.com" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+              type="email"
+              value={formData.email}
+              onChange={handleChange}
+              className={errors.email ? 'border-red-500' : ''}
             />
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Password</FormLabel>
-                  <FormControl>
-                    <Input type="password" placeholder="••••••••" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <div className="flex items-center justify-between">
-              <FormField
-                control={form.control}
-                name="rememberMe"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-start space-x-2 space-y-0">
-                    <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                    <div className="space-y-1 leading-none">
-                      <FormLabel className="text-sm">Remember me</FormLabel>
-                    </div>
-                  </FormItem>
-                )}
-              />
+            {errors.email && (
+              <p className="text-red-500 text-xs">{errors.email}</p>
+            )}
+          </div>
+          
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <label htmlFor="password" className="text-sm font-medium">
+                Password
+              </label>
               <Link to="/auth/reset-password" className="text-sm text-primary hover:underline">
                 Forgot password?
               </Link>
             </div>
-            <Button type="submit" className="w-full">
-              Login
-            </Button>
-          </form>
-        </Form>
+            <Input
+              id="password"
+              name="password"
+              type="password"
+              value={formData.password}
+              onChange={handleChange}
+              className={errors.password ? 'border-red-500' : ''}
+            />
+            {errors.password && (
+              <p className="text-red-500 text-xs">{errors.password}</p>
+            )}
+          </div>
+          
+          <Button type="submit" className="w-full" disabled={isLoading}>
+            {isLoading ? 'Signing in...' : 'Sign In'}
+          </Button>
+        </form>
       </CardContent>
       <CardFooter className="flex justify-center">
         <p className="text-sm text-muted-foreground">
-          Don't have an account?{" "}
+          Don't have an account?{' '}
           <Link to="/auth/signup" className="text-primary hover:underline">
-            Sign up
+            Create an account
           </Link>
         </p>
       </CardFooter>
     </Card>
   );
-};
+}
 
 export default Login;

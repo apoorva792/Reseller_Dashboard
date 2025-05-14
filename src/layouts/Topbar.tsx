@@ -1,11 +1,13 @@
-
 import React from 'react';
-import { Bell, Search } from 'lucide-react';
+import { Bell, Search, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { useAuth } from '@/lib/auth';
 
 const Topbar = () => {
+  const { logout } = useAuth();
+  
   return (
     <div className="h-16 border-b flex items-center justify-between px-4 bg-white">
       <div className="flex-1">
@@ -20,6 +22,11 @@ const Topbar = () => {
       </div>
 
       <div className="flex items-center gap-4">
+        <Button variant="outline" size="sm" onClick={logout} className="flex items-center gap-1">
+          <LogOut className="h-4 w-4" />
+          Logout
+        </Button>
+        
         <Button variant="outline" size="sm">
           Help Center
         </Button>

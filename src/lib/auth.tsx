@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from './api';
+import { toast } from 'sonner';
 
 // Types
 type User = {
@@ -37,29 +38,73 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch (error) {
+        console.error('Error parsing stored user data:', error);
+        localStorage.removeItem('user');
+      }
     }
     setIsLoading(false);
   }, []);
 
   const login = React.useCallback(async (email: string, password: string): Promise<User> => {
     try {
+      console.log(`Attempting login for user: ${email}`);
       const response = await authApi.login({ email, password });
+      console.log('Login response:', response);
+      
+      if (!response.user || !response.access_token) {
+        throw new Error('Invalid response format from login endpoint');
+      }
+      
       setUser(response.user);
       
       // Don't auto-navigate; let the Login component determine where to go
-      // based on onboarding state
       return response.user;
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Login error:', error);
+      
+      // Extract meaningful error message
+      let errorMessage = 'Login failed. Please try again.';
+      if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      toast.error(errorMessage);
       throw error;
     }
   }, []);
 
   const register = React.useCallback(async (data: any) => {
     try {
-      await authApi.register(data);
-      navigate('/auth/login');
-    } catch (error) {
+      console.log('Registering with data:', JSON.stringify(data, null, 2));
+      const response = await authApi.register(data);
+      console.log('Registration response:', response);
+      
+      toast.success('Account created successfully! Please login.');
+      // We'll let the signup component handle navigation
+    } catch (error: any) {
+      console.error('Registration error:', error);
+      
+      // Extract meaningful error message
+      let errorMessage = 'Registration failed. Please try again.';
+      
+      if (error.response?.data?.detail) {
+        if (Array.isArray(error.response.data.detail)) {
+          errorMessage = error.response.data.detail.map((err: any) => 
+            typeof err === 'string' ? err : err.msg || JSON.stringify(err)
+          ).join(', ');
+        } else if (typeof error.response.data.detail === 'string') {
+          errorMessage = error.response.data.detail;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      toast.error(errorMessage);
       throw error;
     }
   }, [navigate]);

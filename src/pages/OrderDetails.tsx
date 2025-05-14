@@ -156,6 +156,17 @@ const OrderDetails = () => {
     total: order.total > 0 ? order.total : calculatedTotals.total
   };
   
+  // Format dates with proper fallback
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) return 'Invalid Date';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString();
+    } catch (e) {
+      return 'Invalid Date';
+    }
+  };
+  
   return (
     <div className="container mx-auto py-8 px-4">
       <div className="flex items-center mb-6">
@@ -164,7 +175,7 @@ const OrderDetails = () => {
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Orders
           </Button>
         </Link>
-        <h1 className="text-2xl font-bold">Order {order.order_id}</h1>
+        <h1 className="text-2xl font-bold">Order {order.order_id || order.order_serial || orderId}</h1>
       </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -180,14 +191,14 @@ const OrderDetails = () => {
                 <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">Status</span>
                   <Badge variant={statusVariants[order.order_status]?.variant || "default"}>
-                    {statusVariants[order.order_status]?.label || order.order_status}
+                    {statusVariants[order.order_status]?.label || order.order_status || 'Pending'}
                   </Badge>
                 </div>
                 
                 <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">Order Date</span>
                   <span className="font-medium">
-                    {new Date(order.date_purchased).toLocaleDateString()}
+                    {formatDate(order.date_purchased)}
                   </span>
                 </div>
                 
@@ -195,6 +206,13 @@ const OrderDetails = () => {
                   <div className="flex justify-between items-center">
                     <span className="text-muted-foreground">Tracking Number</span>
                     <span className="font-medium">{order.tracking_number}</span>
+                  </div>
+                )}
+                
+                {order.source && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Source</span>
+                    <span className="font-medium">{order.source}</span>
                   </div>
                 )}
               </div>
@@ -209,6 +227,20 @@ const OrderDetails = () => {
                   <span className="text-muted-foreground">Shipping Fee</span>
                   <span className="font-medium">₹{displayTotals.shippingFee.toFixed(2)}</span>
                 </div>
+                
+                {order.tax_amount > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Tax</span>
+                    <span className="font-medium">₹{order.tax_amount.toFixed(2)}</span>
+                  </div>
+                )}
+                
+                {order.discount_amount > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Discount</span>
+                    <span className="font-medium">-₹{order.discount_amount.toFixed(2)}</span>
+                  </div>
+                )}
                 
                 <div className="flex justify-between items-center border-t pt-3">
                   <span className="font-semibold">Total</span>
@@ -233,23 +265,50 @@ const OrderDetails = () => {
             <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <h3 className="font-semibold mb-1">Order ID</h3>
-                <p className="text-muted-foreground">{order.order_id}</p>
+                <p className="text-muted-foreground">{order.order_id || order.order_serial || orderId || 'Not available'}</p>
               </div>
               
               <div>
                 <h3 className="font-semibold mb-1">Recipient</h3>
-                <p className="text-muted-foreground">{order.delivery_name}</p>
+                <p className="text-muted-foreground">
+                  {order.delivery_name || order.customer_name || 'Not available'}
+                </p>
               </div>
               
               <div>
                 <h3 className="font-semibold mb-1">Shipping Address</h3>
-                <p className="text-muted-foreground">{order.delivery_address}</p>
+                <p className="text-muted-foreground">
+                  {order.delivery_address || order.shipping_address || 'Not available'}
+                </p>
               </div>
               
               <div>
                 <h3 className="font-semibold mb-1">Contact</h3>
-                <p className="text-muted-foreground">{order.delivery_telephone}</p>
+                <p className="text-muted-foreground">
+                  {order.delivery_telephone || order.customer_telephone || 'Not available'}
+                </p>
               </div>
+              
+              {order.payment_method && (
+                <div>
+                  <h3 className="font-semibold mb-1">Payment Method</h3>
+                  <p className="text-muted-foreground">{order.payment_method}</p>
+                </div>
+              )}
+              
+              {order.customer_email_address && (
+                <div>
+                  <h3 className="font-semibold mb-1">Email</h3>
+                  <p className="text-muted-foreground">{order.customer_email_address}</p>
+                </div>
+              )}
+              
+              {order.order_notes && (
+                <div className="md:col-span-2">
+                  <h3 className="font-semibold mb-1">Order Notes</h3>
+                  <p className="text-muted-foreground">{order.order_notes}</p>
+                </div>
+              )}
             </CardContent>
           </Card>
           
@@ -259,28 +318,72 @@ const OrderDetails = () => {
               <CardTitle>Order Items</CardTitle>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Product</TableHead>
-                    <TableHead className="text-right">Quantity</TableHead>
-                    <TableHead className="text-right">Price</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {order.products?.map((item: any) => (
-                    <TableRow key={item.product_id}>
-                      <TableCell>{item.name}</TableCell>
-                      <TableCell className="text-right">{item.quantity}</TableCell>
-                      <TableCell className="text-right">₹{item.price.toFixed(2)}</TableCell>
-                      <TableCell className="text-right">₹{(item.quantity * item.price).toFixed(2)}</TableCell>
+              {order.products && order.products.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Product</TableHead>
+                      <TableHead className="text-right">Quantity</TableHead>
+                      <TableHead className="text-right">Price</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {order.products.map((item: any, index: number) => (
+                      <TableRow key={item.product_id || index}>
+                        <TableCell>{item.name || item.product_name || `Product #${index + 1}`}</TableCell>
+                        <TableCell className="text-right">{item.quantity || 1}</TableCell>
+                        <TableCell className="text-right">₹{(item.price || 0).toFixed(2)}</TableCell>
+                        <TableCell className="text-right">₹{((item.quantity || 1) * (item.price || 0)).toFixed(2)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <div className="py-8 text-center text-muted-foreground">
+                  No products found for this order.
+                </div>
+              )}
             </CardContent>
           </Card>
+          
+          {/* Shipping Information (if available) */}
+          {(order.tracking_number || order.shipping_method || order.carrier) && (
+            <Card className="card-neumorph-sm">
+              <CardHeader>
+                <CardTitle>Shipping Information</CardTitle>
+              </CardHeader>
+              <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {order.tracking_number && (
+                  <div>
+                    <h3 className="font-semibold mb-1">Tracking Number</h3>
+                    <p className="text-muted-foreground">{order.tracking_number}</p>
+                  </div>
+                )}
+                
+                {order.shipping_method && (
+                  <div>
+                    <h3 className="font-semibold mb-1">Shipping Method</h3>
+                    <p className="text-muted-foreground">{order.shipping_method}</p>
+                  </div>
+                )}
+                
+                {order.carrier && (
+                  <div>
+                    <h3 className="font-semibold mb-1">Carrier</h3>
+                    <p className="text-muted-foreground">{order.carrier}</p>
+                  </div>
+                )}
+                
+                {order.estimated_delivery_date && (
+                  <div>
+                    <h3 className="font-semibold mb-1">Estimated Delivery</h3>
+                    <p className="text-muted-foreground">{formatDate(order.estimated_delivery_date)}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>

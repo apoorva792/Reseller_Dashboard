@@ -318,15 +318,32 @@ const Orders = () => {
         
         // Ensure required fields are present for the order creation service
         const requiredFields = [
-          'order-id', 'order-item-id', 'sku', 'quantity-purchased', 
+          'order-id', 'sku', 'quantity-purchased', 
           'recipient-name', 'ship-address-1', 'ship-city', 
-          'ship-state', 'ship-postal-code'
+          'ship-state', 'ship-postal-code', 'order-item-id'
+        ];
+        
+        // Expected header structure
+        const expectedHeader = [
+          'order-id', 'ship-phone', 'sku', 'quantity-purchased', 
+          'recipient-name', 'ship-address-1', 'ship-address-2', 
+          'ship-address-3', 'ship-city', 'ship-state', 'ship-postal-code',
+          'consumer_price', 'order-item-id', 'product-name', 'shipping-price'
         ];
         
         const headerFields = header.split(',').map(field => field.trim().toLowerCase());
         
+        // Allow for variations in column names
+        const normalizeFieldName = (field) => {
+          // Handle variations like ship-phone-number or ship_phone, etc.
+          if (field.includes('ship') && field.includes('phone')) return 'ship-phone';
+          return field;
+        };
+
+        const normalizedHeaderFields = headerFields.map(normalizeFieldName);
+        
         const missingFields = requiredFields.filter(field => 
-          !headerFields.includes(field.toLowerCase())
+          !normalizedHeaderFields.includes(field.toLowerCase())
         );
         
         if (missingFields.length > 0) {
@@ -334,20 +351,38 @@ const Orders = () => {
           return;
         }
         
+        // Warn the user about the column count
+        if (headerFields.length !== expectedHeader.length) {
+          toast.warning(`Your CSV header has ${headerFields.length} columns, but we recommend ${expectedHeader.length} columns for best results. Download our template for reference.`);
+        }
+        
         // Check the first data row to ensure it has the right format
         if (lines.length >= 2) {
           const firstDataRow = lines[1].trim();
           const values = firstDataRow.split(',');
           
-          // Basic validation: ensure row has same number of columns as header
+          // Instead of erroring on mismatch, provide a warning and continue with upload
           if (values.length !== headerFields.length) {
-            toast.error(`Data row has ${values.length} columns but header has ${headerFields.length} columns`);
-            return;
+            console.warn(`Warning: Data row has ${values.length} columns but header has ${headerFields.length} columns. Attempting to proceed with upload.`);
+            
+            // Check if we can still map the essential fields
+            const essentialFields = ['order-id', 'sku', 'quantity-purchased', 'recipient-name'];
+            const canProceed = essentialFields.every(field => {
+              const index = headerFields.indexOf(field);
+              return index >= 0 && index < values.length;
+            });
+            
+            if (!canProceed) {
+              toast.error("Essential fields (order-id, sku, quantity) can't be mapped correctly. Please check your CSV format.");
+              return;
+            }
+            
+            toast.warning(`Warning: Column count mismatch between header (${headerFields.length}) and data (${values.length}). The system will attempt to map fields based on header positions.`);
           }
           
           // Check order-id format (should look like Amazon order IDs)
           const orderIdIndex = headerFields.indexOf('order-id');
-          if (orderIdIndex >= 0) {
+          if (orderIdIndex >= 0 && orderIdIndex < values.length) {
             const orderId = values[orderIdIndex];
             if (!orderId.match(/\d+-\d+-\d+/) && !orderId.match(/\w+-\d+/)) {
               toast.warning("Order ID format may not be recognized. Expected format: XXX-XXXXXXX-XXXXXXX");
@@ -356,7 +391,7 @@ const Orders = () => {
           
           // Validate SKU is a number
           const skuIndex = headerFields.indexOf('sku');
-          if (skuIndex >= 0) {
+          if (skuIndex >= 0 && skuIndex < values.length) {
             const sku = values[skuIndex];
             if (!sku.match(/^\d+$/)) {
               toast.warning("SKU should be a numeric value");
@@ -477,11 +512,35 @@ const Orders = () => {
       })
     : orders;
 
+  const downloadTemplate = () => {
+    // Create a CSV template with the correct header formatting
+    const header = "order-id,ship-phone,sku,quantity-purchased,recipient-name,ship-address-1,ship-address-2,ship-address-3,ship-city,ship-state,ship-postal-code,consumer_price,order-item-id,product-name,shipping-price";
+    const sampleRow = "123-4567890-1234567,9876543210,12345678,1,John Doe,123 Main St,Apt 456,Near Landmark,New York,NY,10001,29.99,01234567891234,Sample Product,4.99";
+    
+    const csvContent = [header, sampleRow].join('\n');
+    
+    // Create a blob and download it
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'order_template.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast.success("CSV template downloaded. Please follow this format for your order data.");
+  };
+
   return (
     <div className="container mx-auto py-6 space-y-4">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Orders</h1>
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={downloadTemplate}>
+            <Download className="h-4 w-4 mr-2" />
+            Download Template
+          </Button>
           <Button onClick={() => setUploadDialogOpen(true)}>
             <Upload className="h-4 w-4 mr-2" />
             Upload Orders
@@ -600,7 +659,7 @@ const Orders = () => {
       </Tabs>
 
       <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Upload Orders</DialogTitle>
             <DialogDescription>
@@ -608,25 +667,40 @@ const Orders = () => {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <Input
-              type="file"
-              accept=".csv"
-              onChange={handleFileChange}
-              disabled={isUploading}
-            />
+            <div className="flex items-center space-x-2">
+              <Input
+                type="file"
+                accept=".csv"
+                onChange={handleFileChange}
+                className="flex-1"
+              />
+            </div>
             {selectedFile && (
-              <p className="text-sm text-muted-foreground">
-                Selected file: {selectedFile.name}
-              </p>
+              <div className="text-sm">
+                Selected file: <span className="font-semibold">{selectedFile.name}</span>
+              </div>
             )}
+            <div className="bg-muted p-3 rounded-md text-sm">
+              <h4 className="font-medium mb-2">CSV Format:</h4>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>15 columns including header row</li>
+                <li>Maximum file size: 10MB</li>
+              </ul>
+            </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="sm:justify-between">
             <Button variant="outline" onClick={() => setUploadDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleUpload} disabled={!selectedFile || isUploading}>
-              {isUploading ? "Uploading..." : "Upload"}
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={downloadTemplate}>
+                <Download className="h-4 w-4 mr-2" />
+                Template
+              </Button>
+              <Button onClick={handleUpload} disabled={!selectedFile || isUploading}>
+                {isUploading ? 'Uploading...' : 'Upload'}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
