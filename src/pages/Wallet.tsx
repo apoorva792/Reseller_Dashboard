@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowUp, Info } from 'lucide-react';
+import { ArrowUp, Info, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -17,57 +17,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-
-// API client for wallet operations
-const walletApi = {
-  getBalance: async () => {
-    const response = await fetch('/api/wallet/balance', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
-    });
-    if (!response.ok) {
-      throw new Error('Failed to fetch wallet balance');
-    }
-    return response.json();
-  },
-  
-  updateBalance: async (amount: number, transactionType: string, description?: string) => {
-    const response = await fetch('/api/wallet/update', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      },
-      body: JSON.stringify({ amount, transaction_type: transactionType, description })
-    });
-    if (!response.ok) {
-      throw new Error('Failed to update wallet balance');
-    }
-    return response.json();
-  },
-  
-  getTransactions: async (transactionType?: string, page: number = 1, pageSize: number = 20) => {
-    let url = `/api/wallet/transactions?page=${page}&page_size=${pageSize}`;
-    if (transactionType) {
-      url += `&transaction_type=${transactionType}`;
-    }
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
-    });
-    if (!response.ok) {
-      throw new Error('Failed to fetch wallet transactions');
-    }
-    return response.json();
-  }
-};
+import { billApi, userApi } from '@/lib/api';
 
 // Format currency
 const formatCurrency = (amount: number) => {
@@ -78,21 +28,17 @@ const formatCurrency = (amount: number) => {
   }).format(amount);
 };
 
-// Transaction type label
-const getTransactionTypeLabel = (type: string) => {
-  switch (type) {
-    case 'add':
-      return 'Recharge';
-    case 'subtract':
-      return 'Payment';
-    default:
-      return type;
-  }
+// Transaction type mapping based on backend bill_debitload_type
+const BILL_TYPES = {
+  0: 'Payment',    // Default/system transaction
+  1: 'Recharge',   // Money added to account
+  2: 'Withdrawal', // Manual withdrawal
+  3: 'Refund'      // Refund for an order
 };
 
 const Wallet = () => {
   const { user } = useAuth();
-  const [walletBalance, setWalletBalance] = useState<number>(370001.00);
+  const [walletBalance, setWalletBalance] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [selectedTab, setSelectedTab] = useState<string>('all');
@@ -100,83 +46,139 @@ const Wallet = () => {
   const [rechargeDialogOpen, setRechargeDialogOpen] = useState<boolean>(false);
   const [rechargeAmount, setRechargeAmount] = useState<string>('');
   
-  // Fetch wallet balance
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [totalPages, setTotalPages] = useState<number>(1);
+  const pageSize = 10;
+  
+  // Fetch wallet balance - get the most recent bill's balance_after
   const fetchWalletBalance = async () => {
     try {
-      // Comment out actual API call for demo
-      // const response = await walletApi.getBalance();
-      // if (response.success && response.data) {
-      //   setWalletBalance(response.data.currencies_balance);
-      // }
+      setIsLoading(true);
+      const bills = await billApi.getAllBills();
       
-      // Always set to fixed balance for demo
-      setWalletBalance(370001.00);
+      if (bills && Array.isArray(bills) && bills.length > 0) {
+        // Get the most recent bill (first in the list since they're ordered by bill_id desc)
+        const latestBill = bills[0];
+        console.log("Latest bill for balance:", latestBill);
+        setWalletBalance(parseFloat(latestBill.bill_balance_after || "0"));
+      } else {
+        setWalletBalance(0);
+      }
     } catch (error) {
       console.error('Error fetching wallet balance:', error);
-      toast.error('Failed to load wallet balance');
-      
-      // On error, still set the fixed balance
-      setWalletBalance(370001.00);
+      setWalletBalance(0);
     } finally {
       setIsLoading(false);
     }
   };
   
   // Fetch transactions
-  const fetchTransactions = async (tab: string = 'all') => {
+  const fetchTransactions = async (tab: string = 'all', page: number = 1) => {
     try {
       setIsLoading(true);
-      const transactionType = tab === 'all' ? undefined : tab === 'recharges' ? 'add' : tab === 'payments' ? 'subtract' : undefined;
       
-      // Mock transaction data instead of API call
-      const mockTransactions = [
-        {
-          date: '2025-05-01 22:14:41',
-          type: 'Order',
-          amount: '-Rs.1,189.72',
-          balance: 'Rs.742,962.19',
-          details: 'Detail'
-        },
-        {
-          date: '2025-05-01 22:14:41',
-          type: 'Order',
-          amount: '-Rs.2,322.49',
-          balance: 'Rs.740,639.70',
-          details: 'Detail'
-        },
-        {
-          date: '2025-05-01 22:14:41',
-          type: 'Order',
-          amount: '-Rs.2,974.63',
-          balance: 'Rs.737,665.07',
-          details: 'Detail'
-        },
-        {
-          date: '2025-05-01 22:14:41',
-          type: 'Order',
-          amount: '-Rs.508.28',
-          balance: 'Rs.737,156.79',
-          details: 'Detail'
-        },
-        {
-          date: '2025-05-01 22:14:41',
-          type: 'Order',
-          amount: '-Rs.715.47',
-          balance: 'Rs.736,441.32',
-          details: 'Detail'
+      // Use the bills endpoint as shown in your backend
+      const bills = await billApi.getAllBills();
+      
+      if (bills && Array.isArray(bills)) {
+        console.log('Total bills:', bills.length);
+        
+        // Filter bills based on tab/bill_debitload_type
+        let filteredBills = bills;
+        
+        if (tab !== 'all') {
+          if (tab === 'recharges') {
+            // Recharges have bill_debitload_type=1
+            filteredBills = bills.filter(bill => bill.bill_debitload_type === 1);
+          } else if (tab === 'payments') {
+            // Payments have bill_debitload_type=0 or are associated with orders
+            filteredBills = bills.filter(bill => 
+              bill.bill_debitload_type === 0 ||
+              (bill.bill_sum < 0 && bill.order_id)
+            );
+            
+            // Debug payment filtering
+            console.log("Payments tab - found bills:", filteredBills.length);
+            console.log("Sample payment bills:", filteredBills.slice(0, 3));
+          } else if (tab === 'refunds') {
+            // Refunds have bill_debitload_type=3
+            filteredBills = bills.filter(bill => bill.bill_debitload_type === 3);
+          }
         }
-      ];
-      
-      setTransactions(mockTransactions);
-      
-      // Uncomment to use API when ready
-      // const response = await walletApi.getTransactions(transactionType);
-      // if (response.success && response.data) {
-      //   setTransactions(response.data.transactions || []);
-      // }
+        
+        console.log(`Filtered bills for tab ${tab}:`, filteredBills.length);
+        
+        // Calculate total pages
+        const total = filteredBills.length;
+        const calculatedTotalPages = Math.ceil(total / pageSize);
+        setTotalPages(calculatedTotalPages || 1);
+        
+        // Paginate results
+        const startIndex = (page - 1) * pageSize;
+        const paginatedBills = filteredBills.slice(startIndex, startIndex + pageSize);
+        
+        // Transform bill data to frontend transaction format
+        const transformedTransactions = paginatedBills.map(bill => {
+          // Determine transaction type based on bill_debitload_type
+          const type = BILL_TYPES[bill.bill_debitload_type] || 'Transaction';
+          
+          // Debug: Log raw bill data to understand the structure
+          console.log("Processing bill:", {
+            id: bill.bill_id,
+            debitload_type: bill.bill_debitload_type,
+            bill_type: bill.bill_type,
+            sum: bill.bill_sum,
+            order_id: bill.order_id,
+            comments: bill.bill_comments
+          });
+          
+          // Explicitly determine sign based on transaction type and order presence
+          let sign = '+';
+          
+          // Convert bill_sum to number if it's a string
+          const billSum = typeof bill.bill_sum === 'string' ? parseFloat(bill.bill_sum) : bill.bill_sum;
+          
+          if (bill.order_id && bill.bill_debitload_type === 0) {
+            // If it's an order payment, it should be negative (money out)
+            sign = '-';
+          } else if (billSum < 0) {
+            // If sum is negative, it's always a deduction
+            sign = '-';
+          } else if (bill.bill_debitload_type === 1 || bill.bill_debitload_type === 3) {
+            // Recharges and refunds are always positive
+            sign = '+';
+          } else if (bill.bill_debitload_type === 0 || bill.bill_debitload_type === 2) {
+            // Regular payments and withdrawals are negative
+            sign = '-';
+          }
+          
+          // Add order info to transaction type if present
+          let displayType = type;
+          if (bill.order_id) {
+            displayType = billSum < 0 ? 'Order Payment' : 'Order Refund';
+          }
+            
+          return {
+            id: bill.bill_id,
+            date: bill.bill_add_date || 'N/A',
+            type: displayType,
+            amount: billSum ? sign + formatCurrency(Math.abs(billSum)) : 'N/A',
+            balance: bill.bill_balance_after ? formatCurrency(parseFloat(bill.bill_balance_after)) : 'N/A',
+            details: bill.bill_comments || (bill.order_id ? `Order #${bill.order_id}` : 'N/A'),
+            transaction_type: sign === '+' ? 'add' : 'subtract' // For color formatting
+          };
+        });
+        
+        setTransactions(transformedTransactions);
+      } else {
+        setTransactions([]);
+        setTotalPages(1);
+      }
     } catch (error) {
       console.error('Error fetching transactions:', error);
-      toast.error('Failed to load transactions');
+      setTransactions([]);
+      setTotalPages(1);
     } finally {
       setIsLoading(false);
     }
@@ -185,14 +187,33 @@ const Wallet = () => {
   // Handle tab change
   const handleTabChange = (tab: string) => {
     setSelectedTab(tab);
-    fetchTransactions(tab);
+    setCurrentPage(1); // Reset to first page when changing tabs
+    fetchTransactions(tab, 1);
+  };
+  
+  // Handle page change
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
+      fetchTransactions(selectedTab, newPage);
+    }
   };
   
   // Handle autopay toggle
-  const handleAutopayToggle = (enabled: boolean) => {
-    setAutopayEnabled(enabled);
-    toast.success(`Autopay ${enabled ? 'enabled' : 'disabled'}`);
-    // TODO: Update autopay setting in backend
+  const handleAutopayToggle = async (enabled: boolean) => {
+    try {
+      setIsLoading(true);
+      setAutopayEnabled(enabled);
+      
+      // Use the appropriate billApi method to update autopay setting
+      await billApi.updateAutopay(enabled);
+    } catch (error) {
+      console.error('Error updating autopay setting:', error);
+      // Revert the UI state if the API call fails
+      setAutopayEnabled(!enabled);
+    } finally {
+      setIsLoading(false);
+    }
   };
   
   // Handle recharge wallet
@@ -205,18 +226,30 @@ const Wallet = () => {
     try {
       setIsLoading(true);
       const amount = parseFloat(rechargeAmount);
-      const response = await walletApi.updateBalance(amount, 'add', 'Wallet recharge');
       
-      if (response.success) {
-        toast.success('Wallet recharged successfully');
-        setRechargeDialogOpen(false);
-        setRechargeAmount('');
-        fetchWalletBalance();
-        fetchTransactions(selectedTab);
-      }
+      // Create a new bill directly using the schema from your backend
+      const billData = {
+        bill_debitload_type: 1, // 1 = Recharge
+        bill_type: 0, // Default
+        bill_sum: amount,
+        currencies_id: 1, // Default currency ID
+        bill_comments: 'Wallet recharge',
+        bill_balance_before: walletBalance,
+        bill_balance_after: walletBalance + amount
+      };
+      
+      // Use the appropriate billApi method to create a new bill
+      await billApi.createBill(billData);
+      toast.success('Wallet recharged successfully');
+      
+      setRechargeDialogOpen(false);
+      setRechargeAmount('');
+      
+      // Refresh data
+      fetchWalletBalance();
+      fetchTransactions(selectedTab, currentPage);
     } catch (error) {
       console.error('Error recharging wallet:', error);
-      toast.error('Failed to recharge wallet');
     } finally {
       setIsLoading(false);
     }
@@ -225,7 +258,7 @@ const Wallet = () => {
   // Load data on component mount
   useEffect(() => {
     fetchWalletBalance();
-    fetchTransactions();
+    fetchTransactions('all', 1);
   }, []);
   
   return (
@@ -313,10 +346,10 @@ const Wallet = () => {
                     </TableRow>
                   ) : (
                     transactions.map((transaction, index) => (
-                      <TableRow key={index} className="hover:bg-gray-50">
+                      <TableRow key={transaction.id || index} className="hover:bg-gray-50">
                         <TableCell>{transaction.date}</TableCell>
                         <TableCell>{transaction.type}</TableCell>
-                        <TableCell className="text-red-600 font-medium">
+                        <TableCell className={transaction.amount.startsWith('-') ? "text-red-600 font-medium" : "text-green-600 font-medium"}>
                           {transaction.amount}
                         </TableCell>
                         <TableCell>{transaction.balance}</TableCell>
@@ -334,6 +367,35 @@ const Wallet = () => {
                   )}
                 </TableBody>
               </Table>
+              
+              {/* Pagination controls */}
+              {transactions.length > 0 && (
+                <div className="flex justify-between items-center py-4 px-6 border-t">
+                  <div className="text-sm text-gray-500">
+                    Page {currentPage} of {totalPages}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => handlePageChange(currentPage - 1)}
+                      disabled={currentPage <= 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Previous
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => handlePageChange(currentPage + 1)}
+                      disabled={currentPage >= totalPages}
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </Card>
           </TabsContent>
         </Tabs>

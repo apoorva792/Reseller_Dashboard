@@ -4,94 +4,66 @@ import { Button } from '@/components/ui/button';
 import { ArrowUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { billApi } from '@/lib/api';
 
 // Mock data for development/demo
 const MOCK_BALANCE = 370001.00;
 // Setting to false to hide the mock flag
 const USE_MOCK_DATA = false;
 
-// API client for wallet operations
-const fetchWalletBalance = async () => {
-  // Always return mock data for now until API is fixed
-  if (USE_MOCK_DATA) {
-    console.log('Using mock wallet balance:', MOCK_BALANCE);
-    return MOCK_BALANCE;
-  }
-  
-  try {
-    // Based on the error, the URL should match what your backend expects
-    // You may need to check with the backend team for the correct endpoint
-    // Trying with just /get-customer-balance first
-    const url = 'http://localhost:8001/get-customer-balance';
-    console.log('Fetching wallet balance from:', url);
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-      },
-      credentials: 'include'
-    });
-    
-    console.log('Wallet balance response status:', response.status);
-    
-    if (!response.ok) {
-      // Log detailed information about the failed request
-      console.error(`Wallet balance request failed with status: ${response.status}`);
-      throw new Error(`Failed to fetch wallet balance: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    console.log('Wallet balance API response:', data);
-    
-    // Return the balance from the API
-    return data || MOCK_BALANCE; // Fallback to mock balance on null/undefined
-  } catch (error) {
-    console.error('Error fetching wallet balance:', error);
-    
-    // If we're not using mock data, show an error message
-    if (!USE_MOCK_DATA) {
-      toast.error(`Could not fetch wallet balance: ${error.message}`);
-    }
-    
-    // Return mock balance for error cases
-    return MOCK_BALANCE;
-  }
-};
-
 const WalletCard = () => {
   const navigate = useNavigate();
-  const [walletBalance, setWalletBalance] = useState<number>(MOCK_BALANCE);
+  const [walletBalance, setWalletBalance] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   
   useEffect(() => {
     const loadBalance = async () => {
       try {
-        // Uncomment below to fetch actual balance from API
-        // const balance = await fetchWalletBalance();
-        // setWalletBalance(balance);
+        setIsLoading(true);
+        console.log('📊 WalletCard: Fetching wallet balance...');
+        const balanceData = await billApi.getWalletBalance();
         
-        // Use fixed balance for demo
-        setWalletBalance(MOCK_BALANCE);
+        console.log('📊 WalletCard: Balance data received:', balanceData);
+        
+        if (balanceData && balanceData.currencies_balance) {
+          // If we get the new format
+          const balance = parseFloat(balanceData.currencies_balance);
+          console.log(`📊 WalletCard: Using currencies_balance: ${balance}`);
+          setWalletBalance(balance);
+        } else if (balanceData && balanceData.balance) {
+          // If we get the old format
+          console.log(`📊 WalletCard: Using balance: ${balanceData.balance}`);
+          setWalletBalance(balanceData.balance);
+        } else {
+          console.warn('⚠️ WalletCard: Unexpected response format:', balanceData);
+          setWalletBalance(MOCK_BALANCE);
+        }
+        
         setError(null);
       } catch (error) {
-        console.error('Error in loadBalance:', error);
+        console.error('❌ WalletCard: Error in loadBalance:', error);
+        if (error.response) {
+          console.error('❌ Response error:', {
+            status: error.response.status,
+            data: error.response.data
+          });
+        } else if (error.request) {
+          console.error('❌ Request error (no response):', error.request);
+        } else {
+          console.error('❌ Error message:', error.message);
+        }
+        
         setError(error.message);
-        // Use the mock balance since we know the API isn't working
+        // Use the mock balance as fallback
         setWalletBalance(MOCK_BALANCE);
+        toast.error('Could not fetch wallet balance. Using default value.');
       } finally {
         setIsLoading(false);
       }
     };
     
     loadBalance();
-    
-    // Return cleanup function
-    return () => {
-      // Any cleanup logic if needed
-    };
   }, []);
   
   const handleRechargeClick = () => {

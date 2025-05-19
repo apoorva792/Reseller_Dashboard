@@ -208,6 +208,7 @@ const Orders = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [showRecentOnly, setShowRecentOnly] = useState(false);
+  const [sortBy, setSortBy] = useState("last_modified");
   
   // Orders state
   const [orders, setOrders] = useState<any[]>([]);
@@ -228,7 +229,7 @@ const Orders = () => {
         source_option: selectedMarketplace,
         page,
         page_size: pageSize,
-        store_by: "last_modified" // Default sort option
+        store_by: sortBy // Use the sortBy state
       };
 
       let response;
@@ -240,19 +241,16 @@ const Orders = () => {
           response = await orderApi.getWaitForShippingOrders(filters);
           break;
         case 'shipped':
-          response = await orderApi.getShippedOrders(filters);
+          response = await orderApi.getConfirmedOrders(filters);
+          break;
+        case 'abnormal':
+          response = await orderApi.getAbnormalOrders(filters);
           break;
         case 'ticketed':
           response = await orderApi.getTicketedOrders(filters);
           break;
         case 'cancelled':
           response = await orderApi.getCancelledOrders(filters);
-          break;
-        case 'abnormal':
-          response = await orderApi.getAbnormalOrders(filters);
-          break;
-        case 'confirmed':
-          response = await orderApi.getConfirmedOrders(filters);
           break;
         case 'all':
         default:
@@ -274,7 +272,7 @@ const Orders = () => {
   // Update useEffect to use the new fetchTabOrders function
   useEffect(() => {
     fetchTabOrders(selectedTab);
-  }, [selectedTab, searchTerm, selectedMarketplace, dateRange, page]);
+  }, [selectedTab, searchTerm, selectedMarketplace, dateRange, page, sortBy]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -611,26 +609,41 @@ const Orders = () => {
       <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full">
         <TabsList className="w-full justify-start overflow-x-auto">
           <TabsTrigger value="all">All Orders</TabsTrigger>
-          <TabsTrigger value="abnormal">Abnormal</TabsTrigger>
           <TabsTrigger value="awaiting-payment">Awaiting Payment</TabsTrigger>
           <TabsTrigger value="processing">Processing</TabsTrigger>
           <TabsTrigger value="shipped">Shipped</TabsTrigger>
+          <TabsTrigger value="abnormal">Abnormal</TabsTrigger>
           <TabsTrigger value="ticketed">Ticketed orders</TabsTrigger>
           <TabsTrigger value="cancelled">Cancelled</TabsTrigger>
         </TabsList>
         
         {/* Create a common tab content structure that will be used for all tabs */}
-        {['all', 'abnormal', 'awaiting-payment', 'processing', 'shipped', 'ticketed', 'cancelled'].map(tab => (
+        {['all', 'awaiting-payment', 'processing', 'shipped', 'abnormal', 'ticketed', 'cancelled'].map(tab => (
           <TabsContent key={tab} value={tab} className="mt-4">
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Order ID</TableHead>
+                    <TableHead 
+                      onClick={() => setSortBy(sortBy === "orderid" ? "orderiddesc" : "orderid")} 
+                      className="cursor-pointer hover:bg-gray-100"
+                    >
+                      Order ID {sortBy === "orderid" && "↑"}{sortBy === "orderiddesc" && "↓"}
+                    </TableHead>
                     <TableHead>Marketplace</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Order Date</TableHead>
+                    <TableHead 
+                      onClick={() => setSortBy(sortBy === "price" ? "pricedesc" : "price")} 
+                      className="cursor-pointer hover:bg-gray-100"
+                    >
+                      Amount {sortBy === "price" && "↑"}{sortBy === "pricedesc" && "↓"}
+                    </TableHead>
+                    <TableHead 
+                      onClick={() => setSortBy(sortBy === "date" ? "datedesc" : "date")} 
+                      className="cursor-pointer hover:bg-gray-100"
+                    >
+                      Order Date {sortBy === "date" && "↑"}{sortBy === "datedesc" && "↓"}
+                    </TableHead>
                     <TableHead>Recipient</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>

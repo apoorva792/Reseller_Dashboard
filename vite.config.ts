@@ -8,6 +8,18 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    proxy: {
+      '/user': {
+        target: 'https://jh6x51pls9.execute-api.ap-southeast-2.amazonaws.com/dev',
+        changeOrigin: true,
+        secure: false
+      },
+      '/bills': {
+        target: 'https://jh6x51pls9.execute-api.ap-southeast-2.amazonaws.com/dev',
+        changeOrigin: true,
+        secure: false
+      }
+    }
   },
   plugins: [
     react(),

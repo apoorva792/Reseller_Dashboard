@@ -23,8 +23,9 @@ export function useWalletBalance() {
   };
 
   return {
-    balance: data?.balance || 0,
-    currency: data?.currency || 'USD',
+    balance: data?.currencies_balance ? parseFloat(data.currencies_balance) : 
+            (data?.balance || 0),
+    currency: data?.currency || 'INR',
     isLoading,
     error,
     refetch,
@@ -40,7 +41,7 @@ export function useBillingHistory(initialFilters: BillingFilters = {}) {
     error, 
     isLoading, 
     refetch 
-  } = useApi(() => billApi.getBillingHistory(filters), {
+  } = useApi(() => billApi.getCustomerBills(), {
     deps: [filters],
   });
 
@@ -56,11 +57,11 @@ export function useBillingHistory(initialFilters: BillingFilters = {}) {
   };
 
   return {
-    transactions: data?.transactions || [],
+    transactions: Array.isArray(data) ? data : [],
     pagination: {
-      currentPage: data?.page || 1,
-      totalPages: data?.total_pages || 1,
-      totalItems: data?.total_items || 0,
+      currentPage: 1,
+      totalPages: 1,
+      totalItems: Array.isArray(data) ? data.length : 0,
     },
     filters,
     setFilter,

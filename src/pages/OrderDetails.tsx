@@ -14,6 +14,7 @@ import {
 import { ArrowLeft, MessageSquare } from 'lucide-react';
 import { orderApi } from '@/lib/api';
 import { toast } from 'sonner';
+import TicketDialog from '@/components/TicketDialog';
 
 // Status badge variant mapping
 const statusVariants: Record<string, { variant: "default" | "outline" | "secondary" | "destructive", label: string }> = {
@@ -34,22 +35,68 @@ const OrderDetails = () => {
     shippingFee: 0,
     total: 0
   });
+  const [ticketDialogOpen, setTicketDialogOpen] = useState(false);
 
   useEffect(() => {
     const fetchOrderDetails = async () => {
       if (!orderId) return;
+      setIsLoading(true);
 
       try {
+        console.log(`Fetching details for order: ${orderId}`);
         const data = await orderApi.getOrderById(orderId.toString());
-        setOrder(data);
+        
+        // Debug the received data structure
+        console.log('Order data received:', JSON.stringify(data, null, 2));
+        
+        // Map the expected fields to ensure correct rendering
+        const processedOrder = {
+          ...data,
+          order_id: data.order_id,
+          order_serial: data.order_serial || data.amazon_order_id || orderId,
+          date_purchased: data.date_purchased,
+          status: data.status,
+          order_status: data.status, // Map status to expected format for Badge
+          delivery_name: data.recipient_name || data.delivery_name,
+          delivery_address: data.recipient_address || data.delivery_address,
+          delivery_telephone: data.recipient_phone_no || data.delivery_telephone || data.delivery_phone,
+          // Ensure products array exists
+          products: Array.isArray(data.products) 
+            ? data.products.map(product => ({
+                ...product,
+                product_id: product.product_id,
+                quantity: product.quantity,
+                price: product.price,
+                final_price: product.final_price,
+                name: product.name || product.pd_name || product.product_name
+              }))
+            : [],
+        };
+        
+        console.log('Processed order data:', processedOrder);
+        setOrder(processedOrder);
         
         // Calculate totals based on products if the API returns 0
         if (!data.total || !data.subtotal) {
-          calculateOrderTotals(data);
+          calculateOrderTotals(processedOrder);
         }
       } catch (err: any) {
-        setError(err?.response?.data?.detail || "Failed to fetch order details");
-        toast.error(err?.response?.data?.detail || "Failed to fetch order details");
+        console.error('Error details:', err);
+        let errorMsg = "Failed to fetch order details";
+        
+        if (err.response) {
+          console.error('API response error:', err.response.status, err.response.data);
+          errorMsg = `API Error (${err.response.status}): ${err.response.data?.detail || errorMsg}`;
+        } else if (err.request) {
+          console.error('No response received:', err.request);
+          errorMsg = "No response received from server";
+        } else {
+          console.error('Request setup error:', err.message);
+          errorMsg = err.message || errorMsg;
+        }
+        
+        setError(errorMsg);
+        toast.error(errorMsg);
       } finally {
         setIsLoading(false);
       }
@@ -59,29 +106,17 @@ const OrderDetails = () => {
   }, [orderId]);
   
   const calculateOrderTotals = (orderData: any) => {
-    // If there's no products array or it's empty, use mock data for demo
+    // If there's no products array or it's empty, show zero totals
     if (!orderData.products || orderData.products.length === 0) {
-      // This is for the demo only - in production, you'd use actual data
-      const mockProduct = {
-        product_id: 1,
-        name: "Resin Male Chastity Cage Belt Device Penis Lock with 4 Rings Adult Toy Pink",
-        quantity: 1,
-        price: 906.22
-      };
-      
-      const subtotal = mockProduct.quantity * mockProduct.price;
-      const shippingFee = 0; // Placeholder, adjust as needed
-      const total = subtotal + shippingFee;
-      
       setCalculatedTotals({
-        subtotal,
-        shippingFee,
-        total
+        subtotal: 0,
+        shippingFee: 0,
+        total: 0
       });
       
-      // Add the mock product to the order for display
+      // Just ensure products is at least an empty array
       if (!orderData.products) {
-        orderData.products = [mockProduct];
+        orderData.products = [];
         setOrder({...orderData});
       }
       
@@ -167,8 +202,38 @@ const OrderDetails = () => {
     }
   };
   
+  const handleOpenTicket = () => {
+    setTicketDialogOpen(true);
+  };
+  
+  const handleTicketSuccess = () => {
+    toast.success("Ticket created successfully. Our team will review your issue soon.");
+    // Optionally, refresh the order details to reflect the dispute status change
+    if (orderId) {
+      setIsLoading(true);
+      orderApi.getOrderById(orderId.toString())
+        .then(data => {
+          setOrder(data);
+          setIsLoading(false);
+        })
+        .catch(err => {
+          console.error('Error refreshing order details:', err);
+          setIsLoading(false);
+        });
+    }
+  };
+  
   return (
     <div className="container mx-auto py-8 px-4">
+      {/* Ticket Dialog */}
+      <TicketDialog 
+        open={ticketDialogOpen} 
+        onOpenChange={setTicketDialogOpen}
+        orderId={orderId || ''}
+        orderSerial={order?.order_serial || order?.amazon_order_id || ''}
+        onSuccess={handleTicketSuccess}
+      />
+      
       <div className="flex items-center mb-6">
         <Link to="/orders">
           <Button variant="outline" size="sm" className="mr-2">
@@ -248,7 +313,10 @@ const OrderDetails = () => {
                 </div>
               </div>
               
-              <Button className="w-full bg-accent text-accent-foreground hover:bg-accent/90">
+              <Button 
+                className="w-full bg-accent text-accent-foreground hover:bg-accent/90"
+                onClick={handleOpenTicket}
+              >
                 <MessageSquare className="mr-2 h-4 w-4" /> Open a Ticket
               </Button>
             </CardContent>

@@ -1,4 +1,0 @@
-order-id,order-item-id,sku,quantity-purchased,recipient-name,ship-address-1,ship-address-2,ship-city,ship-state,ship-postal-code,ship-phone-number,consumer_price,orders_remark,source,customers_email_address
-402-1099173-8562730,48538193672362,53125552SYMP,1,Dr Amit Bhasin,"52, 2nd floor","Paschimi Marg, vasant vihar, d block",delhi,DELHI,110057,8826247666,159.99,Amazon Order,1,buyer1@example.com
-403-4410873-2561965,48604726947522,53115727SMP,2,Harjup khanuja,"Agroha society near om hospital",Raipura,RAIPUR,CHHATTISGARH,492001,9685519121,129.99,Amazon Order,1,buyer2@example.com
-171-0468627-1201920,48611307032602,72048070PMPD,1,Badrunissa Irfan,"21/22-3 Craig Park","MG Road, craig park layout",Bengaluru,KARNATAKA,560001,9845001148,249.99,Amazon Order,1,buyer3@example.com 

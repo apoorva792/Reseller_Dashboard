@@ -63,11 +63,14 @@ billApiClient.interceptors.request.use(addAuthToken, (error) => Promise.reject(e
 // Add request debug interceptor
 const requestDebugInterceptor = (config) => {
   // Log request for debugging
-  console.log('Request:', {
-    url: config.url,
+  console.log('🔍 Making API Request:', {
+    url: `${config.baseURL}${config.url}`,
     method: config.method,
-    data: config.data,
-    headers: config.headers
+    params: config.params,
+    headers: {
+      Authorization: config.headers.Authorization ? `Bearer ${config.headers.Authorization.substring(0, 15)}...` : 'None',
+      'Content-Type': config.headers['Content-Type']
+    }
   });
   return config;
 };
@@ -78,7 +81,11 @@ billApiClient.interceptors.request.use(requestDebugInterceptor);
 
 // Add response interceptor for debugging
 const responseSuccessInterceptor = (response) => {
-  console.log('Response:', response.data);
+  console.log(`✅ Response from ${response.config.url}:`, {
+    status: response.status,
+    statusText: response.statusText,
+    data: response.data
+  });
   return response;
 };
 
@@ -334,48 +341,71 @@ export const orderApi = {
     try {
       console.log(`Fetching order details for order ID: ${orderId}`);
       
-      // First try to get all orders
-      const url = `${API_BASE_URL}/orders`;
-      console.log(`Making request to: ${url}`);
+      // Construct the full URL to see exactly what we're requesting
+      const fullUrl = `${ORDER_SERVICE_URL}/orders/order/${orderId}`;
+      console.log(`Full request URL: ${fullUrl}`);
       
-      const response = await axios.get(url, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: API_TIMEOUT
-      });
+      // Get the token to check if authentication is properly set
+      const token = localStorage.getItem('accessToken');
+      console.log(`Auth token available: ${!!token}`);
       
-      console.log(`All orders response:`, response.data);
+      // Log request headers before sending
+      const headers = {
+        'Authorization': token ? `Bearer ${token}` : 'None',
+        'Content-Type': 'application/json'
+      };
+      console.log('Request headers:', headers);
       
-      // If we got a list of orders, find the specific order
-      if (response.data && Array.isArray(response.data.orders)) {
-        const order = response.data.orders.find(order => 
-          order.order_id.toString() === orderId.toString() || 
-          order.order_serial === orderId.toString());
-        
-        if (order) {
-          console.log(`Found order details:`, order);
-          return order;
-        } else {
-          throw new Error(`Order with ID ${orderId} not found in the list of orders`);
-        }
-      } else {
-        // If the response is not a list, it might be a single order already
-        return response.data;
+      // Use the specific order endpoint
+      const response = await orderApiClient.get(`/orders/order/${orderId}`);
+      
+      // Log the raw response to see what we're getting back
+      console.log(`Order details raw response:`, response);
+      console.log(`Order details response data:`, JSON.stringify(response.data, null, 2));
+      
+      // Check if the response has the expected structure
+      if (!response.data || typeof response.data !== 'object') {
+        console.error('API returned invalid data format:', response.data);
+        throw new Error('API returned invalid data format');
       }
+      
+      // Verify key fields exist
+      if (!response.data.order_id) {
+        console.warn('Response missing order_id field');
+      }
+      
+      if (!response.data.products) {
+        console.warn('Response missing products array');
+      }
+      
+      return response.data;
     } catch (error) {
       console.error(`Failed to fetch order details for order ${orderId}:`, error);
+      
+      // Enhanced error logging
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        console.error('Error response status:', error.response.status);
+        console.error('Error response headers:', error.response.headers);
+        console.error('Error response data:', error.response.data);
+      } else if (error.request) {
+        // The request was made but no response was received
+        console.error('No response received. Request details:', error.request);
+      } else {
+        // Something happened in setting up the request
+        console.error('Error message:', error.message);
+      }
+      
       // Show a user-friendly error message with more details
       let errorMessage = 'Could not retrieve order details.';
       if (error.response) {
         errorMessage += ` Server responded with ${error.response.status}: ${error.response.data?.detail || error.response.statusText}`;
-        console.error('Error response:', error.response);
       } else if (error.request) {
-        errorMessage += ' No response received from server.';
+        errorMessage += ' No response received from server. Check network connection or CORS settings.';
       } else {
         errorMessage += ` ${error.message}`;
       }
+      
       toast.error(errorMessage);
       throw error;
     }
@@ -388,6 +418,9 @@ export const orderApi = {
         page_size: filters.page_size || 20,
         ...(filters.from_date && { from_date: filters.from_date }),
         ...(filters.to_date && { to_date: filters.to_date }),
+        ...(filters.order_search_item && { order_search_item: filters.order_search_item }),
+        ...(filters.source_option && { source_option: filters.source_option }),
+        store_by: filters.store_by || "last_modified"
       };
       
       const response = await orderApiClient.get('/orders/get-confirmed-orders', { params });
@@ -398,19 +431,102 @@ export const orderApi = {
     }
   },
   
-  getUnshippedOrders: async (filters: any = {}) => {
+  getWaitForShippingOrders: async (filters: any = {}) => {
     try {
       const params = {
         page: filters.page || 1,
         page_size: filters.page_size || 20,
         ...(filters.from_date && { from_date: filters.from_date }),
         ...(filters.to_date && { to_date: filters.to_date }),
+        ...(filters.order_search_item && { order_search_item: filters.order_search_item }),
+        ...(filters.source_option && { source_option: filters.source_option }),
+        store_by: filters.store_by || "last_modified"
       };
       
       const response = await orderApiClient.get('/orders/get-unshipped-orders', { params });
       return response.data;
     } catch (error) {
       console.error('Failed to fetch unshipped orders:', error);
+      throw error;
+    }
+  },
+  
+  getUnpaidOrders: async (filters: any = {}) => {
+    try {
+      const params = {
+        page: filters.page || 1,
+        page_size: filters.page_size || 20,
+        ...(filters.from_date && { from_date: filters.from_date }),
+        ...(filters.to_date && { to_date: filters.to_date }),
+        ...(filters.order_search_item && { order_search_item: filters.order_search_item }),
+        ...(filters.source_option && { source_option: filters.source_option }),
+        store_by: filters.store_by || "last_modified"
+      };
+      
+      const response = await orderApiClient.get('/orders/get-unpaid-orders', { params });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch unpaid orders:', error);
+      throw error;
+    }
+  },
+  
+  getAbnormalOrders: async (filters: any = {}) => {
+    try {
+      const params = {
+        page: filters.page || 1,
+        page_size: filters.page_size || 20,
+        ...(filters.from_date && { from_date: filters.from_date }),
+        ...(filters.to_date && { to_date: filters.to_date }),
+        ...(filters.order_search_item && { order_search_item: filters.order_search_item }),
+        ...(filters.source_option && { source_option: filters.source_option }),
+        store_by: filters.store_by || "last_modified"
+      };
+      
+      const response = await orderApiClient.get('/orders/get-returned-orders', { params });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch abnormal orders:', error);
+      throw error;
+    }
+  },
+  
+  getTicketedOrders: async (filters: any = {}) => {
+    try {
+      const params = {
+        page: filters.page || 1,
+        page_size: filters.page_size || 20,
+        ...(filters.from_date && { from_date: filters.from_date }),
+        ...(filters.to_date && { to_date: filters.to_date }),
+        ...(filters.order_search_item && { order_search_item: filters.order_search_item }),
+        ...(filters.source_option && { source_option: filters.source_option }),
+        store_by: filters.store_by || "last_modified"
+      };
+      
+      const response = await orderApiClient.get('/orders/get-ticketed-orders', { params });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch ticketed orders:', error);
+      throw error;
+    }
+  },
+  
+  getCancelledOrders: async (filters: any = {}) => {
+    try {
+      const params = {
+        page: filters.page || 1,
+        page_size: filters.page_size || 20,
+        ...(filters.from_date && { from_date: filters.from_date }),
+        ...(filters.to_date && { to_date: filters.to_date }),
+        ...(filters.order_search_item && { order_search_item: filters.order_search_item }),
+        ...(filters.source_option && { source_option: filters.source_option }),
+        store_by: filters.store_by || "last_modified"
+      };
+      
+      const response = await orderApiClient.get('/orders/get-cancelled-orders', { params });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch cancelled orders:', error);
       throw error;
     }
   },
@@ -506,6 +622,51 @@ export const orderApi = {
       toast.error('Failed to upload orders. Please try again.');
       throw error;
     }
+  },
+  
+  // New dispute functions
+  createDispute: async (orderId: number, disputeHead: string, reason: string, imgUrl?: string, orderSerial?: string) => {
+    try {
+      console.log(`Creating dispute for order ${orderId}`);
+      const response = await orderApiClient.post('/orders/dispute', {
+        order_id: orderId,
+        order_serial: orderSerial,
+        dispute_head: disputeHead,
+        reason: reason,
+        img_url: imgUrl
+      });
+      
+      toast.success('Ticket created successfully');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to create dispute:', error);
+      
+      let errorMessage = 'Failed to create ticket. ';
+      if (error.response?.data?.detail) {
+        errorMessage += error.response.data.detail;
+      }
+      
+      toast.error(errorMessage);
+      throw error;
+    }
+  },
+  
+  getDisputesByUser: async (filters: any = {}) => {
+    try {
+      const params = {
+        page: filters.page || 1,
+        limit: filters.limit || 10,
+        ...(filters.from_date && { from_date: filters.from_date }),
+        ...(filters.to_date && { to_date: filters.to_date })
+      };
+      
+      const response = await orderApiClient.get('/dispute', { params });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch disputes:', error);
+      toast.error('Failed to fetch tickets. Please try again.');
+      throw error;
+    }
   }
 };
 
@@ -530,10 +691,36 @@ export const billApi = {
   
   getWalletBalance: async () => {
     try {
-      const response = await billApiClient.get('/wallet/balance');
-      return response.data;
+      // First try the new customer balance endpoint using the userApi client
+      try {
+        console.log('Trying to fetch wallet balance from:', `${USER_SERVICE_URL}/get-customer-balance`);
+        const response = await userApi.get('/get-customer-balance');
+        console.log('Customer balance response:', response.data);
+        return response.data;
+      } catch (err) {
+        console.warn('Failed to fetch from user service endpoint, falling back to bill service', err);
+        const response = await billApiClient.get('/wallet/balance');
+        return response.data;
+      }
     } catch (error) {
       console.error('Failed to fetch wallet balance:', error);
+      throw error;
+    }
+  },
+  
+  // Get bills using the user API client
+  getCustomerBills: async (orderId?: number) => {
+    try {
+      console.log('Fetching customer bills from user service');
+      
+      const params = orderId ? { order_id: orderId } : {};
+      // Use userApi client instead of direct axios
+      const response = await userApi.get('/bills/', { params });
+      
+      console.log('Customer bills response:', response.status, response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch customer bills:', error);
       throw error;
     }
   },
@@ -557,22 +744,10 @@ export const billApi = {
   getAllBills: async (orderId?: number) => {
     try {
       console.log('Making API call to get all bills');
-      // Log full API URL for debugging
-      const url = `${API_BASE_URL}/user/bills/`;
-      console.log('API URL:', url);
-      
-      const token = localStorage.getItem('accessToken');
-      console.log('Using token (first 10 chars):', token ? token.substring(0, 10) + '...' : 'No token found');
+      console.log('Bill API endpoint:', `${USER_SERVICE_URL}/bills/`);
       
       const params = orderId ? { order_id: orderId } : {};
-      const response = await axios.get(url, {
-        params,
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: API_TIMEOUT
-      });
+      const response = await userApi.get('/bills/', { params });
       
       console.log('Bills API response:', response.status, response.data);
       return response.data;
@@ -590,13 +765,8 @@ export const billApi = {
 
   getBillById: async (billId: number) => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/user/bills/${billId}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: API_TIMEOUT
-      });
+      // Use userApi client instead of direct axios
+      const response = await userApi.get(`/bills/${billId}`);
       return response.data;
     } catch (error) {
       console.error(`Failed to fetch bill details for bill ${billId}:`, error);
@@ -607,13 +777,8 @@ export const billApi = {
 
   createBill: async (billData: any) => {
     try {
-      const response = await axios.post(`${API_BASE_URL}/user/bills/`, billData, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: API_TIMEOUT
-      });
+      // Use userApi client instead of direct axios
+      const response = await userApi.post('/bills/', billData);
       toast.success('Bill created successfully.');
       return response.data;
     } catch (error) {
@@ -625,13 +790,8 @@ export const billApi = {
 
   updateBill: async (billId: number, updateData: any) => {
     try {
-      const response = await axios.patch(`${API_BASE_URL}/user/bills/${billId}`, updateData, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: API_TIMEOUT
-      });
+      // Use userApi client instead of direct axios
+      const response = await userApi.patch(`/bills/${billId}`, updateData);
       toast.success('Bill updated successfully.');
       return response.data;
     } catch (error) {
@@ -639,5 +799,24 @@ export const billApi = {
       toast.error('Failed to update bill. Please try again.');
       throw error;
     }
+  },
+  
+  // Method to update autopay setting
+  updateAutopay: async (enabled: boolean) => {
+    try {
+      console.log('Updating autopay setting to:', enabled);
+      const response = await userApi.post('/update-autopay', { 
+        is_auto_pay: enabled ? 1 : 0 
+      });
+      toast.success(`Autopay ${enabled ? 'enabled' : 'disabled'} successfully.`);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to update autopay setting:', error);
+      toast.error('Failed to update autopay setting. Please try again.');
+      throw error;
+    }
   }
 };
+
+// Export API clients for direct use in components
+export { userApi, orderApiClient, billApiClient };
